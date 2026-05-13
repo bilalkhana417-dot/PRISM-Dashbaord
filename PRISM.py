@@ -355,6 +355,14 @@ with left:
             )
             peak_label = hour_labels[peak_hour_row]
 
+            # dynamic narrative for the lighting conditions
+            if sel_light == "Daylight":
+                light_narrative = "visibility is optimal, but higher traffic volumes naturally increase incident frequency."
+            elif sel_light in ["Street Lights (Lit)", "Street Lights (Unlit)"]:
+                light_narrative = "artificial lighting creates glare and shadows, slightly reducing depth perception."
+            else:
+                light_narrative = "drivers have reduced reaction time and hazard recognition is delayed, particularly on high-speed roads."
+
             st.markdown(f"""
 **Overview**
 
@@ -376,8 +384,7 @@ for this exact time and condition combination.
 **Environmental Risk Analysis**
 
 The presence of **{sel_weather}** is the leading hazard, causing {narrative}
-Under **{sel_light}** conditions this effect is compounded — drivers have reduced
-reaction time and hazard recognition is delayed, particularly on high-speed roads.
+Under **{sel_light}** conditions, {light_narrative}
 
 **Infrastructure Vulnerability**
 
