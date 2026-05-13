@@ -414,7 +414,7 @@ with right:
             filtered[["latitude", "longitude"]].rename(
                 columns={"latitude": "lat", "longitude": "lon"}
             ),
-            width=None
+use_container_width=True
         )
     else:
         st.info("No spatial data for this simulation.")
