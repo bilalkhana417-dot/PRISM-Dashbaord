@@ -1,6 +1,5 @@
 import platform
 import time
-
 import pandas as pd
 import plotly.express as px
 import streamlit as st
@@ -8,7 +7,7 @@ from sklearn.tree import DecisionTreeClassifier
 
 st.set_page_config(page_title="PRISM", layout="wide")
 
-# have to init session state before anything else otherwise dark_mode doesnt exist when css runs
+# init session state vars first or the app crashes on load
 defaults = {
     "authenticated": False,
     "report_generated": False,
@@ -19,8 +18,7 @@ for k, v in defaults.items():
     if k not in st.session_state:
         st.session_state[k] = v
 
-# keeping all colours in one place makes toggling themes way easier
-# took ages to get these right for both modes
+# colour palettes for light/dark mode (took forever to get these right)
 if st.session_state["dark_mode"]:
     T = dict(
         bg="#0d1117", sidebar_bg="#161b22", card_bg="#161b22",
@@ -48,7 +46,7 @@ else:
         chart_grid="#e1e4e8", dl_btn_bg="#f6f8fa",
     )
 
-# using IBM Plex - looks more like a gov/professional tool than the streamlit defaults
+# custom CSS to make it look less like standard streamlit and more professional
 st.markdown(f"""
 <style>
 @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;600&family=IBM+Plex+Sans:wght@300;400;600;700&display=swap');
@@ -123,7 +121,7 @@ hr {{ border-color: {T['border']} !important; }}
 """, unsafe_allow_html=True)
 
 
-# STATS19 code mappings - pulled from the DfT documentation
+# STATS19 mappings from the official DfT codebook
 DAYS = {
     1: "Sunday", 2: "Monday", 3: "Tuesday", 4: "Wednesday",
     5: "Thursday", 6: "Friday", 7: "Saturday"
@@ -149,10 +147,10 @@ POLICE_AREAS = {
 
 ROAD_TYPES = {1: "Roundabout", 2: "One-Way", 3: "Dual", 6: "Single", 7: "Slip", 9: "Unknown"}
 
-# FIX 1: Corrected STATS19 severity codes — 1=Fatal, 2=Serious, 3=Slight (per DfT official schema)
+# Target variable mapping (1=Fatal, 2=Serious, 3=Slight)
 SEVERITY_LABELS = {1: "Fatal", 2: "Serious", 3: "Slight"}
 
-# these get used in the report to explain why a condition is dangerous
+# contextual notes for the intelligence report
 RISK_NARRATIVE = {
     "Raining":            "reduced tyre traction and longer braking distances.",
     "Snowing":            "severe loss of friction and high chance of multi-vehicle incidents.",
@@ -161,12 +159,12 @@ RISK_NARRATIVE = {
     "No Street Lighting": "delayed hazard recognition due to poor visibility."
 }
 
-# flip the dicts so i can go label -> code when filtering
+# flip dicts for filtering logic
 inv_days    = {v: k for k, v in DAYS.items()}
 inv_weather = {v: k for k, v in WEATHER.items()}
 inv_light   = {v: k for k, v in LIGHTING.items()}
 
-# shared chart config - transparent bg to match the dark/light theme
+# shared chart config
 CHART_LAYOUT = dict(
     paper_bgcolor="rgba(0,0,0,0)",
     plot_bgcolor="rgba(0,0,0,0)",
@@ -174,20 +172,19 @@ CHART_LAYOUT = dict(
     margin=dict(l=0, r=0, t=30, b=0)
 )
 
-
 @st.cache_data(show_spinner="Loading dataset…")
 def load_data(path):
     df = pd.read_csv(path, low_memory=False)
     df.columns = df.columns.str.lower()
-    # need hour as an int for filtering, the raw data has it as HH:MM string
+    
+    # need hour as an int for filtering, raw data is HH:MM
     if "time" in df.columns:
         df["hour"] = pd.to_datetime(df["time"], format="%H:%M", errors="coerce").dt.hour
     df = df.dropna(subset=["latitude", "longitude", "hour"])
     df["hour"] = df["hour"].astype(int)
     return df
 
-
-# using cache_resource here so the model stays in memory and doesnt retrain on every interaction
+# cache the model so we don't have to retrain every time a filter changes
 @st.cache_resource(show_spinner="Training risk model…")
 def train_model(path):
     df = load_data(path)
@@ -195,7 +192,6 @@ def train_model(path):
     clf = DecisionTreeClassifier(max_depth=5, random_state=42)
     clf.fit(df[features], df["collision_severity"])
     return clf, features
-
 
 def add_road_labels(df):
     df = df.copy()
@@ -205,10 +201,10 @@ def add_road_labels(df):
         elif row["first_road_class"] == 3:
             return f"A{int(row['first_road_number'])}"
         return "Local Road"
+        
     df["road_name"] = df.apply(road_name, axis=1)
     df["city_town"] = df["police_force"].map(POLICE_AREAS).fillna("UK Regional Route")
     return df
-
 
 data = load_data("collisions.csv")
 model, FEATURES = train_model("collisions.csv")
@@ -218,7 +214,7 @@ model, FEATURES = train_model("collisions.csv")
 st.sidebar.title("PRISM")
 st.sidebar.caption("Predictive Road Incident Safety Monitor")
 
-# toggle rebuilds T dict on rerun which updates all the colours
+# rebuild UI if theme is toggled
 dark_toggle = st.sidebar.toggle("Dark Mode", value=st.session_state["dark_mode"])
 if dark_toggle != st.session_state["dark_mode"]:
     st.session_state["dark_mode"] = dark_toggle
@@ -238,7 +234,7 @@ else:
 if access_mode == "Admin Portal" and not st.session_state["authenticated"]:
     pwd = st.sidebar.text_input("Administrator Credential", type="password")
     if st.sidebar.button("Verify Identity"):
-        # FIX 2: Password loaded from st.secrets instead of hardcoded plaintext
+        # load from secrets to avoid hardcoding
         if pwd == st.secrets["admin_password"]:
             st.session_state["authenticated"] = True
             st.session_state["logs"].append(f"Login: {time.strftime('%H:%M:%S')}")
@@ -277,7 +273,7 @@ sample = pd.DataFrame(
 )
 pred = model.predict(sample)[0]
 
-# FIX 3: severity_map corrected to match STATS19 schema (1=Fatal, 2=Serious, 3=Slight)
+# map predictions to css badges
 severity_map = {
     1: ("Critical Risk  ·  Fatal",   "badge-high"),
     2: ("Elevated Risk  ·  Serious", "badge-medium"),
@@ -344,7 +340,7 @@ with left:
                 RISK_NARRATIVE.get(sel_light, "a combination of environmental and temporal factors.")
             )
 
-            # FIX 4: Severity counts corrected to match STATS19 schema (1=Fatal, 2=Serious, 3=Slight)
+            # calculate severity splits
             fatal_n   = len(filtered[filtered["collision_severity"] == 1])
             serious_n = len(filtered[filtered["collision_severity"] == 2])
             slight_n  = len(filtered[filtered["collision_severity"] == 3])
@@ -409,12 +405,10 @@ contributes to collision clustering at this location.
 with right:
     st.subheader("Spatial Distribution")
     if not filtered.empty:
-        # FIX 5: Replaced deprecated use_container_width with width parameter
         st.map(
             filtered[["latitude", "longitude"]].rename(
                 columns={"latitude": "lat", "longitude": "lon"}
-            ),
-use_container_width=True
+            )
         )
     else:
         st.info("No spatial data for this simulation.")
@@ -519,6 +513,7 @@ if not filtered.empty:
     prev_count = len(data[(data["day_of_week"] == inv_days[sel_day]) & (data["hour"] == prev_h)])
     next_count = len(data[(data["day_of_week"] == inv_days[sel_day]) & (data["hour"] == next_h)])
     window_note = ""
+    
     if prev_count > len(filtered) * 1.2:
         window_note = f"Incident frequency rises in the hour before ({hour_labels[prev_h]}) — consider early deployment."
     elif next_count > len(filtered) * 1.2:
@@ -552,7 +547,8 @@ if not filtered.empty:
 
     with dep3:
         st.markdown("**Deployment Notes**")
-        # FIX 6: Severity percentages corrected to match STATS19 schema (1=Fatal, 2=Serious)
+        
+        # get percentages for deployment rules
         fatal_pct   = len(filtered[filtered["collision_severity"] == 1]) / len(filtered) * 100
         serious_pct = len(filtered[filtered["collision_severity"] == 2]) / len(filtered) * 100
 
